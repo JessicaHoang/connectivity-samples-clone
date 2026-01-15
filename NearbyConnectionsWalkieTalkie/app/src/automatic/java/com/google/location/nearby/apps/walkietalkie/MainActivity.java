@@ -22,6 +22,7 @@ import android.text.style.ForegroundColorSpan;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewAnimationUtils;
+import android.widget.Button; // Share button function: import
 import android.widget.TextView;
 import android.widget.Toast;
 import com.google.android.gms.nearby.connection.ConnectionInfo;
@@ -107,6 +108,9 @@ public class MainActivity extends ConnectionsActivity {
   /** A running log of debug messages. Only visible when DEBUG=true. */
   private TextView mDebugLogView;
 
+  /** Share button function: Share button*/
+  private Button mShareButton;
+
   /** Listens to holding/releasing the volume rocker. */
   private final GestureDetector mGestureDetector =
       new GestureDetector(KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_UP) {
@@ -145,6 +149,11 @@ public class MainActivity extends ConnectionsActivity {
     mDebugLogView = (TextView) findViewById(R.id.debug_log);
     mDebugLogView.setVisibility(DEBUG ? View.VISIBLE : View.GONE);
     mDebugLogView.setMovementMethod(new ScrollingMovementMethod());
+      // Share Button Function:
+      mShareButton = findViewById(R.id.shareButton);
+
+      // Share Button Function: Share button is hidden until devices are connected.
+      mShareButton.setVisibility(View.GONE);
 
     mName = generateRandomName();
 
@@ -223,6 +232,9 @@ public class MainActivity extends ConnectionsActivity {
 
     // We accept the connection immediately.
     acceptConnection(endpoint);
+
+    // ShareButton shows up once connection is established.
+    runOnUiThread(() -> mShareButton.setVisibility(View.VISIBLE));
   }
 
   @Override
