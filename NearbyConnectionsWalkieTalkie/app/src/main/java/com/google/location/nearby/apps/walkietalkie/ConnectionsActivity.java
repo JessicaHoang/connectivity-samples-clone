@@ -32,6 +32,7 @@ import com.google.android.gms.nearby.connection.Strategy;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -124,6 +125,9 @@ public abstract class ConnectionsActivity extends AppCompatActivity {
   /** True if we are advertising. */
   private boolean mIsAdvertising = false;
 
+  /** Share button function: Stores incoming file payloads in a map.*/
+  private final Map<Long, Payload> incomingFilePayloads = new HashMap<>();
+
   /** Callbacks for connections to other devices. */
   private final ConnectionLifecycleCallback mConnectionLifecycleCallback =
       new ConnectionLifecycleCallback() {
@@ -166,13 +170,52 @@ public abstract class ConnectionsActivity extends AppCompatActivity {
         }
       };
 
-  /** Callbacks for payloads (bytes of data) sent from another device to us. */
+    /** Share button function: retrieve the java file and display it as the image sent.*/
+    private void handleCompletedFilePayload(Payload filePayload) {
+        logE("handleCompletedFilePayload running in: " + this.getClass().getSimpleName(), null);
+        Payload.File file = filePayload.asFile();
+        if (file == null) {
+            logE("File payload was null.", null);
+            return;
+        }
+
+        File receivedFile = file.asJavaFile();
+        if (receivedFile == null) {
+            logE("asJavaFile() returned null.", null);
+            return;
+        }
+
+        logV("Received file stored at: " + receivedFile.getAbsolutePath());
+        // Move the file into your app's private storage.
+        File dest = new File(getFilesDir(), "received_" + System.currentTimeMillis() + ".jpg");
+        boolean moved = receivedFile.renameTo(dest);
+
+        if (!moved) {
+            logV("Failed to move file to app storage.");
+            return;
+        }
+        logV("File moved to: " + dest.getAbsolutePath());
+        // Optional: show a toast
+        Toast.makeText(this, "Received image file!", Toast.LENGTH_SHORT).show();
+
+        // TODO: Display the image or move it to app storage
+    }
+
+
+    /** Callbacks for payloads (bytes of data) sent from another device to us. */
   private final PayloadCallback mPayloadCallback =
       new PayloadCallback() {
         @Override
         public void onPayloadReceived(String endpointId, Payload payload) {
           logD(String.format("onPayloadReceived(endpointId=%s, payload=%s)", endpointId, payload));
-          onReceive(mEstablishedConnections.get(endpointId), payload);
+            // FILE handling added here
+            if (payload.getType() == Payload.Type.FILE) {
+                long id = payload.getId();
+                incomingFilePayloads.put(id, payload);
+                logD("Received FILE payload (waiting for completion). ID=" + id);
+            }
+
+            onReceive(mEstablishedConnections.get(endpointId), payload);
         }
 
         @Override
@@ -180,6 +223,16 @@ public abstract class ConnectionsActivity extends AppCompatActivity {
           logD(
               String.format(
                   "onPayloadTransferUpdate(endpointId=%s, update=%s)", endpointId, update));
+            long id = update.getPayloadId();
+
+            if (update.getStatus() == PayloadTransferUpdate.Status.SUCCESS) {
+              Payload filePayload = incomingFilePayloads.remove(id);
+
+              if (filePayload != null && filePayload.getType() == Payload.Type.FILE) {
+                  // Call your MainActivity method
+                  handleCompletedFilePayload(filePayload);
+              }
+          }
         }
       };
 
@@ -504,7 +557,10 @@ public abstract class ConnectionsActivity extends AppCompatActivity {
    * @param endpoint The sender.
    * @param payload The data.
    */
-  protected void onReceive(Endpoint endpoint, Payload payload) {}
+  protected void onReceive(Endpoint endpoint, Payload payload) {
+      logE("ConnectionsActivity.onReceive CALLED!", null);
+
+  }
 
   /**
    * An optional hook to pool any permissions the app needs with the permissions ConnectionsActivity

@@ -32,8 +32,14 @@ import android.widget.TextView;
 import android.widget.Toast;
 import com.google.android.gms.nearby.connection.ConnectionInfo;
 import com.google.android.gms.nearby.connection.Payload;
+import com.google.android.gms.nearby.connection.PayloadCallback; // Share button function: import
+import com.google.android.gms.nearby.connection.PayloadTransferUpdate; // Share button function: import
 import com.google.android.gms.nearby.connection.Strategy;
+
+import java.io.File; // Share button function: import
 import java.io.IOException;
+import java.util.HashMap; // Share button function: import
+import java.util.Map; // Share button function: import
 import java.util.Random;
 
 /**
@@ -119,6 +125,9 @@ public class MainActivity extends ConnectionsActivity {
   /** Share button function: Activity result launcher for image picking */
   private ActivityResultLauncher<Intent> imagePickerLauncher;
 
+  /** Share button function: Stores incoming file payloads in a map.*/
+  private final Map<Long, Payload> incomingFilePayloads = new HashMap<>();
+
   /** Listens to holding/releasing the volume rocker. */
   private final GestureDetector mGestureDetector =
       new GestureDetector(KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_UP) {
@@ -144,26 +153,28 @@ public class MainActivity extends ConnectionsActivity {
   /** The phone's original media volume. */
   private int mOriginalVolume;
 
-    /** Sends an image file to all connected devices. */
-    private void sendImageFile(Uri uri) {
-        try {
-            // Open the file as a read-only ParcelFileDescriptor
-            ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r");
-            if (pfd == null) {
-                logV("ParcelFileDescriptor for image URI was null.");
-                return;
-            }
-            Payload filePayload = Payload.fromFile(pfd);
 
-            // Send the payload to all connected endpoints.
-            send(filePayload);
-            logV("Sent image file with URI: " + uri);
-            Toast.makeText(this, "Sending file...", Toast.LENGTH_SHORT).show();
+  /** Share button function: Sends an image file to all connected devices. */
+  private void sendImageFile(Uri uri) {
+      logE("Sending file payload: " + uri, null);
+      try {
+          // Open the file as a read-only ParcelFileDescriptor
+          ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r");
+          if (pfd == null) {
+              logV("ParcelFileDescriptor for image URI was null.");
+              return;
+          }
+          Payload filePayload = Payload.fromFile(pfd);
 
-        } catch (IOException e) {
-            logE("Failed to send image file.", e);
-        }
-    }
+          // Send the payload to all connected endpoints.
+          send(filePayload);
+          logV("Sent image file with URI: " + uri);
+          Toast.makeText(this, "Sending file...", Toast.LENGTH_SHORT).show();
+
+      } catch (IOException e) {
+          logE("Failed to send image file.", e);
+      }
+  }
 
 
     @Override
@@ -500,33 +511,51 @@ public class MainActivity extends ConnectionsActivity {
   /** {@see ConnectionsActivity#onReceive(Endpoint, Payload)} */
   @Override
   protected void onReceive(Endpoint endpoint, Payload payload) {
-    if (payload.getType() == Payload.Type.STREAM) {
-      if (mAudioPlayer != null) {
-        mAudioPlayer.stop();
-        mAudioPlayer = null;
-      }
 
-      AudioPlayer player =
-          new AudioPlayer(payload.asStream().asInputStream()) {
-            @WorkerThread
-            @Override
-            protected void onFinish() {
-              runOnUiThread(
-                  new Runnable() {
-                    @UiThread
-                    @Override
-                    public void run() {
-                      mAudioPlayer = null;
-                    }
-                  });
-            }
-          };
-      mAudioPlayer = player;
-      player.start();
-    }
+      switch (payload.getType()) {
+
+          case Payload.Type.STREAM:
+              // --- ORIGINAL AUDIO LOGIC (unchanged) ---
+              if (mAudioPlayer != null) {
+                  mAudioPlayer.stop();
+                  mAudioPlayer = null;
+              }
+
+              AudioPlayer player =
+                      new AudioPlayer(payload.asStream().asInputStream()) {
+
+                          @WorkerThread
+                          @Override
+                          protected void onFinish() {
+                              runOnUiThread(
+                                      new Runnable() {
+                                          @UiThread
+                                          @Override
+                                          public void run() {
+                                              mAudioPlayer = null;
+                                          }
+                                      });
+                          }
+                      };
+
+              mAudioPlayer = player;
+              player.start();
+              break;
+
+          case Payload.Type.FILE:
+              // --- NEW FILE LOGIC ---
+              long id = payload.getId();
+              incomingFilePayloads.put(id, payload);
+              logV("Received FILE payload (waiting for completion). ID=" + id);
+              break;
+
+          case Payload.Type.BYTES:
+              // Optional: if you use text messages
+              break;
+      }
   }
 
-  /** Stops all currently streaming audio tracks. */
+    /** Stops all currently streaming audio tracks. */
   private void stopPlaying() {
     logV("stopPlaying()");
     if (mAudioPlayer != null) {
@@ -683,4 +712,5 @@ public class MainActivity extends ConnectionsActivity {
     SEARCHING,
     CONNECTED
   }
+
 }
