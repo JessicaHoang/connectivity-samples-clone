@@ -4,10 +4,15 @@ import android.Manifest;
 import android.animation.Animator;
 import android.animation.ObjectAnimator;
 import android.content.Context;
+import android.content.Intent; // Share button function: import
 import android.media.AudioManager;
+import android.net.Uri; // Share button function: import
 import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
+
+import androidx.activity.result.ActivityResultLauncher; // Share button function: import
+import androidx.activity.result.contract.ActivityResultContracts; // Share button function: import
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -111,6 +116,9 @@ public class MainActivity extends ConnectionsActivity {
   /** Share button function: Share button*/
   private Button mShareButton;
 
+  /** Share button function: Activity result launcher for image picking */
+  private ActivityResultLauncher<Intent> imagePickerLauncher;
+
   /** Listens to holding/releasing the volume rocker. */
   private final GestureDetector mGestureDetector =
       new GestureDetector(KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_UP) {
@@ -136,7 +144,29 @@ public class MainActivity extends ConnectionsActivity {
   /** The phone's original media volume. */
   private int mOriginalVolume;
 
-  @Override
+    /** Sends an image file to all connected devices. */
+    private void sendImageFile(Uri uri) {
+        try {
+            // Open the file as a read-only ParcelFileDescriptor
+            ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r");
+            if (pfd == null) {
+                logV("ParcelFileDescriptor for image URI was null.");
+                return;
+            }
+            Payload filePayload = Payload.fromFile(pfd);
+
+            // Send the payload to all connected endpoints.
+            send(filePayload);
+            logV("Sent image file with URI: " + uri);
+            Toast.makeText(this, "Sending file...", Toast.LENGTH_SHORT).show();
+
+        } catch (IOException e) {
+            logE("Failed to send image file.", e);
+        }
+    }
+
+
+    @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
@@ -149,12 +179,30 @@ public class MainActivity extends ConnectionsActivity {
     mDebugLogView = (TextView) findViewById(R.id.debug_log);
     mDebugLogView.setVisibility(DEBUG ? View.VISIBLE : View.GONE);
     mDebugLogView.setMovementMethod(new ScrollingMovementMethod());
-      // Share Button Function:
-      mShareButton = findViewById(R.id.shareButton);
+    // Share Button Function:
+    mShareButton = findViewById(R.id.shareButton);
 
-      // Share Button Function: Share button is hidden until devices are connected.
-      mShareButton.setVisibility(View.GONE);
+    // Share Button Function: Share button is hidden until devices are connected.
+    mShareButton.setVisibility(View.GONE);
+      // Share Button Function: to select photo to share
+      imagePickerLauncher =
+              registerForActivityResult(
+                      new ActivityResultContracts.StartActivityForResult(),
+                      result -> {
+                          if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                              Uri imageUri = result.getData().getData();
+                              if (imageUri != null) {
+                                  sendImageFile(imageUri);
+                              }
+                          }
+                      });
 
+      // Share Button Function: Share button listener to open up the image picker upon clicking.
+      mShareButton.setOnClickListener(v -> {
+          Intent intent = new Intent(Intent.ACTION_PICK);
+          intent.setType("image/*");
+          imagePickerLauncher.launch(intent);
+      });
     mName = generateRandomName();
 
     ((TextView) findViewById(R.id.name)).setText(mName);
