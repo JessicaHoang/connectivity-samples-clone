@@ -18,12 +18,14 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import androidx.annotation.WorkerThread;
+import androidx.collection.SimpleArrayMap; // Share button function: import
 import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
 import android.text.SpannableString;
 import android.text.format.DateFormat;
 import android.text.method.ScrollingMovementMethod;
 import android.text.style.ForegroundColorSpan;
+import android.util.Log; // Share button function: import
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewAnimationUtils;
@@ -37,7 +39,11 @@ import com.google.android.gms.nearby.connection.PayloadTransferUpdate; // Share 
 import com.google.android.gms.nearby.connection.Strategy;
 
 import java.io.File; // Share button function: import
+import java.io.FileOutputStream; // Share button function: import
 import java.io.IOException;
+import java.io.InputStream; // Share button function: import
+import java.io.OutputStream; // Share button function: import
+import java.nio.charset.StandardCharsets; // Share button function: import
 import java.util.HashMap; // Share button function: import
 import java.util.Map; // Share button function: import
 import java.util.Random;
@@ -128,7 +134,57 @@ public class MainActivity extends ConnectionsActivity {
   /** Share button function: Stores incoming file payloads in a map.*/
   private final Map<Long, Payload> incomingFilePayloads = new HashMap<>();
 
-  /** Listens to holding/releasing the volume rocker. */
+  /** Share button function: dispatching PayloadCallback*/
+    @Override
+    protected PayloadCallback getPayloadCallback() {
+        return new PayloadCallback() {
+
+            /** Share button function: onPayloadReceived only took in STREAM payloads, so
+             * this one is for receiving FILE and BYTES is a different manner as FILE will need
+             * onPayloadTransferUpdate*/
+            @Override
+            public void onPayloadReceived(String endpointId, Payload payload) {
+                if (payload.getType() == Payload.Type.STREAM) {
+                    audioPayloadCallback.onPayloadReceived(endpointId, payload);
+                } else if (payload.getType() == Payload.Type.FILE
+                        || payload.getType() == Payload.Type.BYTES) {
+                    filePayloadCallback.onPayloadReceived(endpointId, payload);
+                }
+            }
+
+            /** Share button function: onPayloadTransferUpdate processes the FILE payloads
+             * in filePayloadCallback.*/
+            @Override
+            public void onPayloadTransferUpdate(
+                    String endpointId, PayloadTransferUpdate update) {
+
+                filePayloadCallback.onPayloadTransferUpdate(endpointId, update);
+                audioPayloadCallback.onPayloadTransferUpdate(endpointId, update);
+            }
+        };
+    }
+
+    private final PayloadCallback audioPayloadCallback =
+            new PayloadCallback() {
+                @Override
+                public void onPayloadReceived(String endpointId, Payload payload) {
+                    if (payload.getType() == Payload.Type.STREAM) {
+                        mAudioPlayer = new AudioPlayer(payload.asStream().asInputStream());
+                        mAudioPlayer.start();
+                    }
+                }
+
+                @Override
+                public void onPayloadTransferUpdate(
+                        String endpointId, PayloadTransferUpdate update) { }
+            };
+
+    private final ReceiveFilePayloadCallback filePayloadCallback =
+            new ReceiveFilePayloadCallback(this);
+
+
+
+    /** Listens to holding/releasing the volume rocker. */
   private final GestureDetector mGestureDetector =
       new GestureDetector(KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_UP) {
         @Override
@@ -156,12 +212,12 @@ public class MainActivity extends ConnectionsActivity {
 
   /** Share button function: Sends an image file to all connected devices. */
   private void sendImageFile(Uri uri) {
-      logE("Sending file payload: " + uri, null);
+      logE(">>> MainActivity Sending file payload fired " + uri, null);
       try {
           // Open the file as a read-only ParcelFileDescriptor
           ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r");
           if (pfd == null) {
-              logV("ParcelFileDescriptor for image URI was null.");
+              logE("ParcelFileDescriptor for image URI was null.", null);
               return;
           }
           Payload filePayload = Payload.fromFile(pfd);
@@ -179,7 +235,8 @@ public class MainActivity extends ConnectionsActivity {
 
     @Override
   protected void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
+        Log.e("TEST", ">>> MainActivity onCreate fired");
+        super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
     getSupportActionBar()
         .setBackgroundDrawable(ContextCompat.getDrawable(this, R.drawable.actionBar));
@@ -229,6 +286,7 @@ public class MainActivity extends ConnectionsActivity {
 
   @Override
   protected void onStart() {
+    Log.e("TEST", ">>> MainActivity start() fired");
     super.onStart();
 
     // Set the media volume to max.
@@ -278,7 +336,8 @@ public class MainActivity extends ConnectionsActivity {
   @Override
   protected void onEndpointDiscovered(Endpoint endpoint) {
     // We found an advertiser!
-    stopDiscovering();
+      Log.e("TEST", ">>> MainActivity onEndpointFound fired: " + endpoint);
+      stopDiscovering();
     connectToEndpoint(endpoint);
   }
 
@@ -287,11 +346,11 @@ public class MainActivity extends ConnectionsActivity {
     // A connection to another device has been initiated! We'll use the auth token, which is the
     // same on both devices, to pick a color to use when we're connected. This way, users can
     // visually see which device they connected with.
-    mConnectedColor = COLORS[connectionInfo.getAuthenticationToken().hashCode() % COLORS.length];
+      Log.e("TEST", ">>> MainActivity onConnectionInitiated fired");
+      mConnectedColor = COLORS[connectionInfo.getAuthenticationToken().hashCode() % COLORS.length];
 
     // We accept the connection immediately.
     acceptConnection(endpoint);
-
     // ShareButton shows up once connection is established.
     runOnUiThread(() -> mShareButton.setVisibility(View.VISIBLE));
   }
@@ -315,7 +374,8 @@ public class MainActivity extends ConnectionsActivity {
   @Override
   protected void onConnectionFailed(Endpoint endpoint) {
     // Let's try someone else.
-    if (getState() == State.SEARCHING) {
+      Log.e("TEST", ">>> MainActivity onConnectionFailed fired");
+      if (getState() == State.SEARCHING) {
       startDiscovering();
     }
   }
@@ -508,10 +568,10 @@ public class MainActivity extends ConnectionsActivity {
     }
   }
 
-  /** {@see ConnectionsActivity#onReceive(Endpoint, Payload)} */
+  /** {@see ConnectionsActivity#onReceive(Endpoint, Payload). Changed to accomodate FILE payloads} */
   @Override
   protected void onReceive(Endpoint endpoint, Payload payload) {
-
+      Log.e("TEST", ">>> MainActivity onReceive fired, type=" + payload.getType());
       switch (payload.getType()) {
 
           case Payload.Type.STREAM:
@@ -550,10 +610,52 @@ public class MainActivity extends ConnectionsActivity {
               break;
 
           case Payload.Type.BYTES:
-              // Optional: if you use text messages
+              // Not used
               break;
       }
   }
+
+    @Override
+    protected void onTransferUpdate(
+            Endpoint endpoint, PayloadTransferUpdate update) {
+
+        if (update.getStatus() == PayloadTransferUpdate.Status.SUCCESS) {
+
+            long payloadId = update.getPayloadId();
+            Payload payload = incomingFilePayloads.remove(payloadId);
+
+            if (payload != null && payload.getType() == Payload.Type.FILE) {
+                processFilePayload(payloadId, payload);
+            }
+        }
+    }
+
+
+    private void processFilePayload(long payloadId, Payload payload) {
+
+        String filename = ReceiveFilePayloadCallback.filePayloadFilenames.remove(payloadId);
+        if (filename == null) filename = "received_image";
+
+        Uri uri = payload.asFile().asUri();
+
+        try (InputStream in = getContentResolver().openInputStream(uri);
+             OutputStream out =
+                     new FileOutputStream(new File(getCacheDir(), filename))) {
+
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+
+            logV("Saved file: " + filename);
+
+        } catch (IOException e) {
+            logE("File receive failed", e);
+        } finally {
+            getContentResolver().delete(uri, null, null);
+        }
+    }
 
     /** Stops all currently streaming audio tracks. */
   private void stopPlaying() {
@@ -712,5 +814,94 @@ public class MainActivity extends ConnectionsActivity {
     SEARCHING,
     CONNECTED
   }
+
+    static class ReceiveFilePayloadCallback extends PayloadCallback {
+
+        private final Context context;
+        private final SimpleArrayMap<Long, Payload> incomingFilePayloads =
+                new SimpleArrayMap<>();
+        private final SimpleArrayMap<Long, Payload> completedFilePayloads =
+                new SimpleArrayMap<>();
+        private static final SimpleArrayMap<Long, String> filePayloadFilenames =
+                new SimpleArrayMap<>();
+
+        ReceiveFilePayloadCallback(Context context) {
+            this.context = context;
+        }
+
+        @Override
+        public void onPayloadReceived(String endpointId, Payload payload) {
+            if (payload.getType() == Payload.Type.BYTES) {
+                String payloadFilenameMessage =
+                        null;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                    payloadFilenameMessage = new String(payload.asBytes(), StandardCharsets.UTF_8);
+                }
+                long payloadId = addPayloadFilename(payloadFilenameMessage);
+                processFilePayload(payloadId);
+            } else if (payload.getType() == Payload.Type.FILE) {
+                incomingFilePayloads.put(payload.getId(), payload);
+            }
+        }
+
+        private long addPayloadFilename(String payloadFilenameMessage) {
+            String[] parts = payloadFilenameMessage.split(":");
+            long payloadId = Long.parseLong(parts[0]);
+            String filename = parts[1];
+            filePayloadFilenames.put(payloadId, filename);
+            return payloadId;
+        }
+
+        private void processFilePayload(long payloadId) {
+            Payload filePayload = completedFilePayloads.get(payloadId);
+            String filename = filePayloadFilenames.get(payloadId);
+
+            if (filePayload != null && filename != null) {
+                completedFilePayloads.remove(payloadId);
+                filePayloadFilenames.remove(payloadId);
+
+                Uri uri = filePayload.asFile().asUri();
+                try (InputStream in =
+                             context.getContentResolver().openInputStream(uri);
+                     OutputStream out =
+                             new FileOutputStream(
+                                     new File(context.getCacheDir(), filename))) {
+                    copyStream(in, out);
+                } catch (IOException e) {
+                    Log.e("FileReceive", "Failed to save file", e);
+                } finally {
+                    context.getContentResolver().delete(uri, null, null);
+                }
+            }
+        }
+
+        @Override
+        public void onPayloadTransferUpdate(
+
+                String endpointId, PayloadTransferUpdate update) {
+            Log.e("TEST", ">>> MainActivity onPayloadTransferUpdate fired, status=" + update.getStatus());
+
+
+            if (update.getStatus() == PayloadTransferUpdate.Status.SUCCESS) {
+                long payloadId = update.getPayloadId();
+                Payload payload = incomingFilePayloads.remove(payloadId);
+                completedFilePayloads.put(payloadId, payload);
+
+                if (payload.getType() == Payload.Type.FILE) {
+                    processFilePayload(payloadId);
+                }
+            }
+        }
+
+        private static void copyStream(InputStream in, OutputStream out)
+                throws IOException {
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+        }
+    }
+
 
 }
