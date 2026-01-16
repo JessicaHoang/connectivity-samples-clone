@@ -615,6 +615,8 @@ public class MainActivity extends ConnectionsActivity {
       }
   }
 
+  /** Share button function: since the completion of the transfer is indicated when
+   * PayloadCallback.onPayloadTransferUpdate, this was created to handle the File Payloads. */
     @Override
     protected void onTransferUpdate(
             Endpoint endpoint, PayloadTransferUpdate update) {
@@ -630,7 +632,8 @@ public class MainActivity extends ConnectionsActivity {
         }
     }
 
-
+    /** Share button function: This method was for after the transfer was successful
+     * to process the FILE payloads. */
     private void processFilePayload(long payloadId, Payload payload) {
 
         String filename = ReceiveFilePayloadCallback.filePayloadFilenames.remove(payloadId);
@@ -815,6 +818,10 @@ public class MainActivity extends ConnectionsActivity {
     CONNECTED
   }
 
+  /** Share button function: acceptConnection() takes in one payload. This was created to
+   * implement both onPayloadReceived and onPayloadTransferUpdate as well as other methods
+   * to process the FILE payloads. Now acceptConnection can take one argument.
+   * */
     static class ReceiveFilePayloadCallback extends PayloadCallback {
 
         private final Context context;
